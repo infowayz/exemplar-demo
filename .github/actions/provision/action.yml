@@ -1,0 +1,19 @@
+name: 'provision'
+description: 'Sets up and runs Terraform, and save state in local encrypted artifact'
+author: 'Satya Tanwar'
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v2
+    - uses: hashicorp/setup-terraform@v1
+    - id: terraform
+      working-directory: ./iac
+      run: '& $env:GITHUB_ACTION_PATH/script.ps1' 
+      shell: pwsh
+    - uses: actions/upload-artifact@v2
+      with:
+        name: terraformstatefile
+        path: ./iac/terraform.tfstate.enc
+branding:
+  icon: 'cloud'
+  color: 'gray-dark'

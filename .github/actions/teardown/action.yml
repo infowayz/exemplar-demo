@@ -1,0 +1,48 @@
+name: 'teardown'
+description: 'Teardown resources with Terraform, for state in local encrypted artifact'
+author: 'Satya Tanwar'
+inputs:
+  encryptionkey:
+    description: 'Used to read artifact and as a key to encrypt and decrypt the state file artifact'
+    required: true
+runs:
+  using: "composite"
+  steps:
+
+    - uses: actions/checkout@v2
+    - uses: hashicorp/setup-terraform@v1
+    - id: terraform
+      run: |
+        cd iac
+        $Repo = "${{ github.repository }}"
+        $BaseUri = "https://api.github.com"
+        $ArtifactUri = "$BaseUri/repos/$Repo/actions/artifacts"
+        $Token = "${{ github.token }}" | ConvertTo-SecureString -AsPlainText
+        $RestResponse = Invoke-RestMethod -Authentication Bearer -Uri $ArtifactUri -Token $Token | Select-Object -ExpandProperty artifacts
+        if ($RestResponse){
+          $MostRecentArtifactURI = $RestResponse | Sort-Object -Property created_at -Descending | where name -eq "terraformstatefile" | Select-Object -First 1 | Select-Object -ExpandProperty archive_download_url
+          Write-Host "Most recent artifact URI = $MostRecentArtifactURI"
+          if ($MostRecentArtifactURI){
+            Invoke-RestMethod -uri $MostRecentArtifactURI -Token $Token -Authentication bearer -outfile ./state.zip
+            Expand-Archive ./state.zip
+            openssl enc -d -in ./state/terraform.tfstate.enc -aes-256-cbc -pbkdf2 -pass pass:"${{ inputs.encryptionkey }}" -out ./terraform.tfstate
+          }
+        }
+        terraform init
+        
+        terraform plan 
+        
+        terraform destroy -auto-approve 
+        
+        $StateExists = Test-Path -Path ./terraform.tfstate -PathType Leaf
+        if ($StateExists){
+          openssl enc -in ./terraform.tfstate -aes-256-cbc -pbkdf2 -pass pass:"${{ inputs.encryptionkey }}" -out ./terraform.tfstate.enc
+        }
+      shell: pwsh
+    - uses: actions/upload-artifact@v2
+      with:
+        name: terraformstatefile
+        path: ./terraform.tfstate.enc
+branding:
+  icon: 'cloud'
+  color: 'gray-dark'
